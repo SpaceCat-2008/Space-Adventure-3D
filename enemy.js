@@ -1,3 +1,4 @@
+import * as THREE from './three.module.js';
 import { CONSTANTS } from './utils.js';
 import { Bullet } from './bullet.js';
 
