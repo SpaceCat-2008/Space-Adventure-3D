@@ -55,8 +55,17 @@ export class Enemy {
                 flatShading: true
             });
 
-            // Cabeza (Box)
-            const headGeo = new THREE.BoxGeometry(this.config.SIZE, this.config.SIZE * 0.8, this.config.SIZE);
+            const isSmall = this.typeStr === 'SMALL';
+            
+            // Cabeza
+            let headGeo;
+            if (isSmall) {
+                // Sphere low poly para enemigos pequeños
+                headGeo = new THREE.SphereGeometry(this.config.SIZE * 0.6, 8, 8);
+            } else {
+                // Box para el resto
+                headGeo = new THREE.BoxGeometry(this.config.SIZE, this.config.SIZE * 0.8, this.config.SIZE);
+            }
             const head = new THREE.Mesh(headGeo, catMat);
             head.castShadow = true;
             head.receiveShadow = true;
@@ -74,10 +83,11 @@ export class Enemy {
             const eyeGeo = new THREE.BoxGeometry(this.config.SIZE * 0.15, this.config.SIZE * 0.15, this.config.SIZE * 0.1);
             
             const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-this.config.SIZE * 0.2, this.config.SIZE * 0.1, this.config.SIZE * 0.45);
+            const eyeZOffset = isSmall ? this.config.SIZE * 0.55 : this.config.SIZE * 0.45;
+            eyeL.position.set(-this.config.SIZE * 0.2, this.config.SIZE * 0.1, eyeZOffset);
             
             const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeR.position.set(this.config.SIZE * 0.2, this.config.SIZE * 0.1, this.config.SIZE * 0.45);
+            eyeR.position.set(this.config.SIZE * 0.2, this.config.SIZE * 0.1, eyeZOffset);
 
             this.mesh.add(head, earL, earR, eyeL, eyeR);
         }
@@ -165,15 +175,8 @@ export class Enemy {
             }
             
             return; // Termina la actualización exclusiva para FINAL_BOSS
-        } else if (isSmall) {
-            // Pequeños: patrullan, alta distancia detección
-            if (distance <= 35) {
-                this.state = 'ATTACK';
-            } else {
-                this.state = 'PATROL';
-            }
         } else {
-            // Grandes y Jefes de nivel: no patrullan, persiguen desde cualquier distancia
+            // Todos los enemigos restantes (incluyendo pequeños) persiguen desde cualquier distancia
             this.state = 'ATTACK';
         }
 
@@ -193,8 +196,8 @@ export class Enemy {
             // Dejar de patrullar y mirar al jugador
             this.mesh.rotation.y = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
             
-            // Grandes y Jefes de nivel persiguen al jugador
-            if (isLarge || isBoss) {
+            // Todos los enemigos persiguen al jugador
+            if (isLarge || isBoss || isSmall) {
                 const aggressiveness = isBoss ? 1.5 : 1.0;
                 // Mantener cierta distancia para disparar sin superponerse
                 if (Math.abs(dirX) > 5) {
