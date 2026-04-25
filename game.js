@@ -98,9 +98,7 @@ export class Game {
         });
 
         document.getElementById('btn-restart').addEventListener('click', () => {
-            this.resetLevel();
-            this.ui.hideGameOver();
-            this.isRunning = true;
+            location.reload();
         });
     }
 
