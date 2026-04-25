@@ -13,6 +13,11 @@ export class Enemy {
         this.shootTimer = 0;
         this.shootInterval = Math.random() * 1000 + 1500; // 1.5 a 2.5 seg
 
+        this.state = 'PATROL';
+        this.startX = position.x;
+        this.patrolDir = 1;
+        this.patrolRange = 10;
+
         this._createMesh(position);
     }
 
@@ -94,23 +99,39 @@ export class Enemy {
     update(delta, playerPosition, gameObj) {
         if (!this.active) return;
 
-        // Moverse lentamente hacia el jugador (solo en el eje X para no meterse en la profundidad)
+        const distance = this.mesh.position.distanceTo(playerPosition);
         const dirX = playerPosition.x - this.mesh.position.x;
         const sign = Math.sign(dirX);
-        
-        // Solo acercarse si está en rango
-        if (Math.abs(dirX) > 2) {
-            this.mesh.position.x += sign * this.config.SPEED * delta;
+
+        // Detectar jugador a menos de 15 de distancia
+        if (distance <= 15) {
+            this.state = 'ATTACK';
+        } else {
+            this.state = 'PATROL';
         }
 
-        // Hacer que miren hacia el jugador (voltear la malla visualmente)
-        this.mesh.rotation.y = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
-
-        // Disparo
-        this.shootTimer += delta * 1000;
-        if (this.shootTimer >= this.shootInterval && Math.abs(dirX) < 30) {
-            this.shootTimer = 0;
-            this.shoot(playerPosition, gameObj);
+        if (this.state === 'PATROL') {
+            // Movimiento izquierda/derecha automático suave
+            this.mesh.position.x += this.patrolDir * this.config.SPEED * 0.5 * delta;
+            
+            // Cambiar dirección si se sale del rango de patrulla
+            if (Math.abs(this.mesh.position.x - this.startX) > this.patrolRange) {
+                this.patrolDir *= -1;
+                // Ajustar posición para evitar oscilación
+                this.mesh.position.x = this.startX + this.patrolDir * this.patrolRange * 0.99;
+            }
+            
+            this.mesh.rotation.y = this.patrolDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        } else if (this.state === 'ATTACK') {
+            // Dejar de patrullar y mirar al jugador
+            this.mesh.rotation.y = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
+            
+            // Disparar con cooldown (no spam)
+            this.shootTimer += delta * 1000;
+            if (this.shootTimer >= this.shootInterval) {
+                this.shootTimer = 0;
+                this.shoot(playerPosition, gameObj);
+            }
         }
     }
 
