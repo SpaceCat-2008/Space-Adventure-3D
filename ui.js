@@ -1,5 +1,4 @@
-import * as THREE from '../libs/three.module.js';
-
+import * as THREE from './three.module.js';
 export class UI {
     constructor() {
         this.hpBarInner = document.getElementById('hp-bar-inner');
