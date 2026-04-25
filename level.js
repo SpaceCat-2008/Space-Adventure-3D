@@ -157,4 +157,3 @@ export class Level {
         return true;
     }
 }
-
