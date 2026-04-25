@@ -11,9 +11,17 @@ export class Player {
         this.jetpackEnergy = CONSTANTS.PLAYER.JETPACK_MAX_TIME;
         this.isJetpackActive = false;
         
+        this.weaponEnergy = 100;
+        this.weaponConsume = 25;
+        this.weaponReloadRate = 100 / 2; // 100% en 2 segundos -> 50% por segundo
+        
+        this.shootCooldown = 0;
+        this.shootDelay = 0.4; // 0.4 segundos de cooldown para reducir velocidad de disparo
+        
         this.velocity = new THREE.Vector3(0, 0, 0);
         this.isGrounded = false;
         this.canJump = true;
+        this.isShipMode = false;
         
         this._createMesh();
     }
@@ -22,46 +30,68 @@ export class Player {
         this.mesh = new THREE.Group();
 
         // Materiales
-        const suitMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.1 });
-        const visorMat = new THREE.MeshStandardMaterial({ color: 0x00aaff, roughness: 0.1, metalness: 0.8 });
-        const packMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5 });
+        const suitMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
+        const detailMat = new THREE.MeshStandardMaterial({ color: 0x0055ff, roughness: 0.2, metalness: 0.5 });
+        const visorMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.8 });
+        const packMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.5 });
+        const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00aaff, emissiveIntensity: 1 });
 
-        // Cuerpo principal
-        const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
+        // Cuerpo principal (Cylinder)
+        const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.0, 16);
         const body = new THREE.Mesh(bodyGeo, suitMat);
-        body.position.y = 0.6;
+        body.position.y = 0.5;
         body.castShadow = true;
 
-        // Cabeza (Casco)
+        // Cinturón (Cylinder detalle azul)
+        const beltGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.15, 16);
+        const belt = new THREE.Mesh(beltGeo, detailMat);
+        belt.position.y = 0.2;
+
+        // Hombros (Esferas detalles azules)
+        const shoulderGeo = new THREE.SphereGeometry(0.2, 16, 16);
+        const shoulderL = new THREE.Mesh(shoulderGeo, detailMat);
+        shoulderL.position.set(-0.45, 0.8, 0);
+        const shoulderR = new THREE.Mesh(shoulderGeo, detailMat);
+        shoulderR.position.set(0.45, 0.8, 0);
+
+        // Cabeza (Casco - Sphere)
         const headGeo = new THREE.SphereGeometry(0.35, 16, 16);
         const head = new THREE.Mesh(headGeo, suitMat);
-        head.position.y = 1.4;
+        head.position.y = 1.3;
 
-        // Visor
-        const visorGeo = new THREE.SphereGeometry(0.25, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2.5);
+        // Visor oscuro (Box angular low poly)
+        const visorGeo = new THREE.BoxGeometry(0.5, 0.3, 0.4);
         const visor = new THREE.Mesh(visorGeo, visorMat);
-        visor.position.set(0, 1.45, 0.2);
-        visor.rotation.x = -Math.PI / 2;
+        visor.position.set(0, 1.3, 0.2);
 
-        // Mochila (Jetpack)
+        // Mochila (Jetpack - Box)
         const packGeo = new THREE.BoxGeometry(0.5, 0.7, 0.3);
         const pack = new THREE.Mesh(packGeo, packMat);
-        pack.position.set(0, 0.9, -0.4);
+        pack.position.set(0, 0.6, -0.4);
 
-        // Fuego del jetpack (Partículas simuladas con conos que cambian de tamaño)
+        // Luces del Jetpack emissive azules
+        const lightGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.1, 8);
+        const lightL = new THREE.Mesh(lightGeo, lightMat);
+        lightL.position.set(-0.15, 0.3, -0.5);
+        lightL.rotation.x = Math.PI / 2;
+        const lightR = new THREE.Mesh(lightGeo, lightMat);
+        lightR.position.set(0.15, 0.3, -0.5);
+        lightR.rotation.x = Math.PI / 2;
+
+        // Fuego del jetpack
         const fireGeo = new THREE.ConeGeometry(0.15, 0.5, 8);
-        const fireMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+        const fireMat = new THREE.MeshBasicMaterial({ color: 0x00aaff });
         this.fireL = new THREE.Mesh(fireGeo, fireMat);
-        this.fireL.position.set(-0.15, 0.4, -0.4);
+        this.fireL.position.set(-0.15, 0.1, -0.4);
         this.fireL.rotation.x = Math.PI;
         this.fireL.visible = false;
 
         this.fireR = new THREE.Mesh(fireGeo, fireMat);
-        this.fireR.position.set(0.15, 0.4, -0.4);
+        this.fireR.position.set(0.15, 0.1, -0.4);
         this.fireR.rotation.x = Math.PI;
         this.fireR.visible = false;
 
-        this.mesh.add(body, head, visor, pack, this.fireL, this.fireR);
+        this.mesh.add(body, belt, shoulderL, shoulderR, head, visor, pack, lightL, lightR, this.fireL, this.fireR);
         this.scene.add(this.mesh);
     }
 
@@ -75,6 +105,35 @@ export class Player {
             this.mesh.rotation.y = Math.PI / 2;
         } else {
             this.velocity.x = 0;
+        }
+
+        if (this.isShipMode) {
+            this.velocity.y = 0;
+            
+            // Fuego continuo en modo nave
+            this.fireL.visible = true;
+            this.fireR.visible = true;
+            this.fireL.scale.y = Math.random() * 0.5 + 0.5;
+            this.fireR.scale.y = Math.random() * 0.5 + 0.5;
+            
+            // Aplicar velocidad
+            this.mesh.position.addScaledVector(this.velocity, delta);
+            
+            // Limitar X
+            if (this.mesh.position.x < -20) this.mesh.position.x = -20;
+            if (this.mesh.position.x > 20) this.mesh.position.x = 20;
+            
+            // Recargar Arma y cooldown para que no se bloquee el disparo
+            if (this.weaponEnergy < 100) {
+                this.weaponEnergy += this.weaponReloadRate * delta;
+                if (this.weaponEnergy > 100) this.weaponEnergy = 100;
+            }
+            if (this.shootCooldown > 0) {
+                this.shootCooldown -= delta;
+            }
+            this.ui.updateWeapon(this.weaponEnergy / 100);
+            
+            return;
         }
 
         // Gravedad
@@ -95,8 +154,17 @@ export class Player {
                 this.canJump = false; // Requiere soltar para volver a saltar
             } else if (!this.isGrounded && this.jetpackEnergy > 0) {
                 // Jetpack
-                // Compensar la gravedad para poder elevarse
-                this.velocity.y += (Math.abs(CONSTANTS.LEVEL.GRAVITY) + CONSTANTS.PLAYER.JETPACK_FORCE) * delta;
+                // Limitar la altura del jetpack a una altitud máxima (ej. 18 unidades)
+                if (this.mesh.position.y >= 18) {
+                    // Al alcanzar el límite, detener la subida y mantener la gravedad normal
+                    if (this.velocity.y > 0) {
+                        this.velocity.y = 0; 
+                    }
+                } else {
+                    // Compensar la gravedad para poder elevarse
+                    this.velocity.y += (Math.abs(CONSTANTS.LEVEL.GRAVITY) + CONSTANTS.PLAYER.JETPACK_FORCE) * delta;
+                }
+                
                 this.jetpackEnergy -= delta * 1000;
                 this.isJetpackActive = true;
             }
@@ -111,6 +179,16 @@ export class Player {
         // Limitar energía
         this.jetpackEnergy = Math.max(0, Math.min(this.jetpackEnergy, CONSTANTS.PLAYER.JETPACK_MAX_TIME));
 
+        // Recargar Arma y cooldown
+        if (this.weaponEnergy < 100) {
+            this.weaponEnergy += this.weaponReloadRate * delta;
+            if (this.weaponEnergy > 100) this.weaponEnergy = 100;
+        }
+
+        if (this.shootCooldown > 0) {
+            this.shootCooldown -= delta;
+        }
+
         // Efecto visual jetpack
         if (this.isJetpackActive) {
             this.fireL.visible = true;
@@ -124,6 +202,7 @@ export class Player {
 
         // Actualizar UI
         this.ui.updateJetpack(this.jetpackEnergy / CONSTANTS.PLAYER.JETPACK_MAX_TIME);
+        this.ui.updateWeapon(this.weaponEnergy / 100);
 
         // Aplicar velocidad a posición
         this.mesh.position.addScaledVector(this.velocity, delta);
@@ -139,6 +218,12 @@ export class Player {
     }
 
     shoot(targetPos) {
+        if (this.shootCooldown > 0) return null; // Cooldown activo
+        if (this.weaponEnergy < this.weaponConsume) return null; // No hay suficiente energía
+        
+        this.weaponEnergy -= this.weaponConsume;
+        this.shootCooldown = this.shootDelay;
+
         // Disparo sale del centro del jugador
         const origin = this.mesh.position.clone().add(new THREE.Vector3(0, 1, 0));
         
