@@ -23,7 +23,12 @@ export class Level {
     generateLevel() {
         this.cleanUp();
         
-        this.length = 150 + (this.currentLevel * 50);
+        const numPlatforms = 5 + this.currentLevel * 2;
+        const numEnemies = 5 + (this.currentLevel * 5); // Dificultad progresiva
+        
+        // Ajustar longitud para asegurar espacio para todo sin superposición
+        this.length = Math.max(150 + (this.currentLevel * 50), 40 + (numPlatforms * 20), 40 + (numEnemies * 25));
+        
         this.bossActive = false;
         
         // Suelo principal
@@ -34,13 +39,17 @@ export class Level {
         this.scene.add(this.floor);
 
         // Plataformas móviles
-        const numPlatforms = 5 + this.currentLevel * 2;
+        let lastPlatformEndX = 10;
         for (let i = 0; i < numPlatforms; i++) {
             const width = MathUtils.randFloat(3, 8);
+            const space = MathUtils.randFloat(10, 18); // Mantener distancia mínima y separación clara
+            const spawnX = lastPlatformEndX + space + (width / 2);
+            lastPlatformEndX = spawnX + (width / 2);
+
             const platGeo = new THREE.BoxGeometry(width, 1, 3);
             const plat = new THREE.Mesh(platGeo, this.platformMat);
             plat.position.set(
-                MathUtils.randFloat(10, this.length - 20),
+                spawnX,
                 MathUtils.randFloat(2, 10),
                 0
             );
@@ -58,9 +67,11 @@ export class Level {
         }
 
         // Programar spawn de enemigos a lo largo del nivel
-        const numEnemies = 5 + (this.currentLevel * 5); // Dificultad progresiva
+        let lastEnemyX = 20;
         for (let i = 0; i < numEnemies; i++) {
-            const spawnX = MathUtils.randFloat(20, this.length - 30);
+            // Distribuir para evitar grupos (min 15 a 25 unidades de distancia)
+            const spawnX = lastEnemyX + MathUtils.randFloat(15, 25);
+            lastEnemyX = spawnX;
             
             let type = 'SMALL';
             const rand = Math.random();
@@ -146,3 +157,4 @@ export class Level {
         return true;
     }
 }
+
