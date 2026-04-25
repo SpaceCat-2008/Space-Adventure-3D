@@ -1,4 +1,4 @@
-import * as THREE from '../libs/three.module.js';
+import * as THREE from './three.module.js';
 import { CONSTANTS } from './utils.js';
 import { AudioController } from './audio.js';
 import { UI } from './ui.js';
