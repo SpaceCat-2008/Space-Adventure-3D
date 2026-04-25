@@ -22,7 +22,8 @@ export const CONSTANTS = {
         SMALL: { HP: 1, DAMAGE: 10, SPEED: 5, SCORE: 10, SIZE: 1, COLOR: 0xff0000 },
         MEDIUM: { HP: 2, DAMAGE: 15, SPEED: 4, SCORE: 20, SIZE: 1.5, COLOR: 0xff8800 },
         LARGE: { HP: 3, DAMAGE: 20, SPEED: 3, SCORE: 30, SIZE: 2, COLOR: 0xaa0000 },
-        BOSS: { HP: 5, DAMAGE: 20, SPEED: 6, SCORE: 100, SIZE: 3, COLOR: 0x550000 } // 5 hits (20% c/u)
+        BOSS: { HP: 5, DAMAGE: 20, SPEED: 6, SCORE: 100, SIZE: 3, COLOR: 0x550000 },
+        FINAL_BOSS: { HP: 50, DAMAGE: 30, SPEED: 10, SCORE: 1000, SIZE: 6, COLOR: 0xff00ff }
     },
     LEVEL: {
         GRAVITY: -50,
