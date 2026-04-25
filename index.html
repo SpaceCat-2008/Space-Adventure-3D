@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Adventure 3D</title>
+    <style>
+        :root {
+            --glass-bg: rgba(20, 20, 30, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --glass-blur: blur(12px);
+            --text-color: #f0f0f0;
+            --accent: #00ffcc;
+        }
+
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050510;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: var(--text-color);
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Glassmorphism UI Base */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* HUD Superior */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .stats-container {
+            padding: 15px 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 250px;
+        }
+
+        .bar-container {
+            width: 100%;
+            height: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .bar-inner {
+            height: 100%;
+            width: 100%;
+            transition: width 0.2s ease, background 0.3s ease;
+        }
+
+        #hp-bar-inner {
+            background: linear-gradient(90deg, #00ff88, #00bb55);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+
+        #jetpack-bar-inner {
+            background: linear-gradient(90deg, #00aaff, #0055ff);
+            box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+        }
+
+        .label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #aaa;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .info-container {
+            padding: 15px 25px;
+            text-align: right;
+        }
+
+        .info-text {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin: 5px 0;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .highlight {
+            color: var(--accent);
+        }
+
+        /* Menús a pantalla completa */
+        .overlay-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            background: radial-gradient(circle at center, rgba(10, 10, 20, 0.7) 0%, rgba(5, 5, 10, 0.95) 100%);
+        }
+
+        .menu-box {
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            animation: float 6s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0% {
+                transform: translateY(0px);
+            }
+
+            50% {
+                transform: translateY(-10px);
+            }
+
+            100% {
+                transform: translateY(0px);
+            }
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin: 0 0 10px 0;
+            background: linear-gradient(135deg, #fff, var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 15px rgba(0, 255, 204, 0.3);
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            margin: 0 0 20px 0;
+        }
+
+        p.instructions {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #ccc;
+            margin-bottom: 30px;
+            text-align: left;
+        }
+
+        .controls-list {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 30px 0;
+            text-align: left;
+        }
+
+        .controls-list li {
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .key {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: var(--accent);
+            margin-right: 10px;
+            min-width: 24px;
+            text-align: center;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #00ffcc, #0088ff);
+            border: none;
+            border-radius: 30px;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #000;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 255, 204, 0.4);
+        }
+
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(0, 255, 204, 0.6);
+        }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 2px solid rgba(0, 255, 204, 0.8);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 50;
+            display: none;
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+        }
+
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Ocultar inicialmente pantallas secundarias */
+        #game-over-screen,
+        #victory-screen {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Puntero Mira -->
+    <div id="crosshair"></div>
+
+    <!-- Interfaz de Juego (HUD) -->
+    <div id="hud">
+        <div class="stats-container glass-panel">
+            <div>
+                <span class="label">Salud (HP)</span>
+                <div class="bar-container">
+                    <div id="hp-bar-inner" class="bar-inner"></div>
+                </div>
+            </div>
+            <div>
+                <span class="label">Energía Jetpack</span>
+                <div class="bar-container">
+                    <div id="jetpack-bar-inner" class="bar-inner"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-container glass-panel">
+            <div id="level-text" class="info-text">Nivel: 1/5</div>
+            <div id="parts-text" class="info-text highlight">Partes: 0</div>
+        </div>
+    </div>
+
+    <!-- Pantalla de Inicio -->
+    <div id="start-screen" class="overlay-screen">
+        <div class="menu-box glass-panel">
+            <h1>Space Adventure</h1>
+            <p class="instructions">Sobrevive en la luna, derrota a los gatos alienígenas y recupera las piezas de tu
+                nave.</p>
+
+            <ul class="controls-list">
+                <li><span class="key">A</span> / <span class="key">D</span> Moverse Izquierda / Derecha</li>
+                <li><span class="key">ESP</span> Saltar</li>
+                <li><span class="key">ESP</span> (Mantener) Jetpack</li>
+                <li><span class="key">CLICK</span> Disparar Láser</li>
+                <li><span class="key">MOUSE</span> Apuntar</li>
+            </ul>
+
+            <button id="btn-play" class="btn">INICIAR MISIÓN</button>
+        </div>
+    </div>
+
+    <!-- Pantalla de Game Over -->
+    <div id="game-over-screen" class="overlay-screen">
+        <div class="menu-box glass-panel" style="border-color: rgba(255,0,0,0.3);">
+            <h2 style="color: #ff3333;">MISIÓN FALLIDA</h2>
+            <p class="instructions" style="text-align: center;">Tu traje ha sido comprometido.</p>
+            <button id="btn-restart" class="btn"
+                style="background: linear-gradient(45deg, #ff3333, #ff8800);">REINTENTAR NIVEL</button>
+        </div>
+    </div>
+
+    <!-- Pantalla de Victoria -->
+    <div id="victory-screen" class="overlay-screen">
+        <div class="menu-box glass-panel" style="border-color: rgba(0,255,136,0.3);">
+            <h2 style="color: #00ff88;">¡MISIÓN CUMPLIDA!</h2>
+            <p class="instructions" style="text-align: center;">Has recuperado todas las partes de tu nave y puedes
+                volver a casa.</p>
+            <button class="btn" onclick="location.reload()">JUGAR DE NUEVO</button>
+        </div>
+    </div>
+
+    <!-- Cargar Módulo Principal -->
+    <script type="module" src="./js/main.js"></script>
+</body>
+
+</html>
