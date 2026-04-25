@@ -1,269 +1,355 @@
 import * as THREE from './three.module.js';
 import { CONSTANTS } from './utils.js';
-import { Bullet } from './bullet.js';
+import { AudioController } from './audio.js';
+import { UI } from './ui.js';
+import { Player } from './player.js';
+import { Level } from './level.js';
+import { Enemy } from './enemy.js';
 
-export class Enemy {
-    constructor(scene, type, position) {
-        this.scene = scene;
-        this.typeStr = type;
-        this.config = CONSTANTS.ENEMY[type];
-        this.hp = this.config.HP;
-        this.maxHp = this.config.HP;
-        this.active = true;
-        this.shootTimer = 0;
-        this.shootInterval = Math.random() * 1000 + 2000; // 2 a 3 seg cooldown entre ráfagas
+export class Game {
+    constructor() {
+        this.audio = new AudioController();
+        this.ui = new UI();
         
-        this.isBursting = false;
-        this.burstTimer = 0;
-        this.burstDelay = 150; // ms entre balas de la ráfaga
-        this.burstShotsFired = 0;
+        this.input = {
+            keys: {},
+            mouse: new THREE.Vector2(),
+            isClicking: false
+        };
+        
+        this.enemies = [];
+        this.playerBullets = [];
+        this.enemyBullets = [];
+        this.collectedParts = 0;
+        this.bossSpawned = false; // Bandera para evitar duplicación del Jefe Final
+        
+        this.clock = new THREE.Clock();
+        this.isRunning = false;
 
-        this.state = 'PATROL';
-        this.startX = position.x;
-        this.patrolDir = 1;
-        this.patrolRange = 10;
-
-        this._createMesh(position);
+        this._initThreeJS();
+        this._initEvents();
     }
 
-    _createMesh(position) {
-        this.mesh = new THREE.Group();
-        this.mesh.position.copy(position);
+    _initThreeJS() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x050510);
+        this.scene.fog = new THREE.Fog(0x050510, 20, 80);
 
-        const isFinalBoss = this.typeStr === 'FINAL_BOSS';
-
-        if (isFinalBoss) {
-            const bodyGeo = new THREE.SphereGeometry(this.config.SIZE / 2, 16, 16);
-            const bodyMat = new THREE.MeshStandardMaterial({ 
-                color: this.config.COLOR,
-                roughness: 0.7,
-                metalness: 0.2
-            });
-            const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.castShadow = true;
-            body.receiveShadow = true;
-            this.mesh.add(body);
-        } else {
-            // Low poly green space cats
-            const isBoss = this.typeStr === 'BOSS';
-            const catColor = isBoss ? 0x11aa22 : 0x22cc44; // Jefe un verde más distintivo
-            
-            const catMat = new THREE.MeshStandardMaterial({ 
-                color: catColor,
-                roughness: 0.8,
-                metalness: 0.1,
-                flatShading: true
-            });
-
-            // Cabeza (Box)
-            const headGeo = new THREE.BoxGeometry(this.config.SIZE, this.config.SIZE * 0.8, this.config.SIZE);
-            const head = new THREE.Mesh(headGeo, catMat);
-            head.castShadow = true;
-            head.receiveShadow = true;
-
-            // Orejas (Cone)
-            const earGeo = new THREE.ConeGeometry(this.config.SIZE * 0.25, this.config.SIZE * 0.5, 4);
-            const earL = new THREE.Mesh(earGeo, catMat);
-            earL.position.set(-this.config.SIZE * 0.3, this.config.SIZE * 0.4, 0);
-            
-            const earR = new THREE.Mesh(earGeo, catMat);
-            earR.position.set(this.config.SIZE * 0.3, this.config.SIZE * 0.4, 0);
-
-            // Ojos (Box oscuros)
-            const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
-            const eyeGeo = new THREE.BoxGeometry(this.config.SIZE * 0.15, this.config.SIZE * 0.15, this.config.SIZE * 0.1);
-            
-            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-this.config.SIZE * 0.2, this.config.SIZE * 0.1, this.config.SIZE * 0.45);
-            
-            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeR.position.set(this.config.SIZE * 0.2, this.config.SIZE * 0.1, this.config.SIZE * 0.45);
-
-            this.mesh.add(head, earL, earR, eyeL, eyeR);
+        // Estrellas de fondo
+        const starsGeo = new THREE.BufferGeometry();
+        const starsCount = 1000;
+        const posArray = new Float32Array(starsCount * 3);
+        for(let i=0; i<starsCount*3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 200;
         }
+        starsGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const starsMat = new THREE.PointsMaterial({size: 0.1, color: 0xffffff});
+        this.starsMesh = new THREE.Points(starsGeo, starsMat);
+        this.starsMesh.position.z = -20;
+        this.scene.add(this.starsMesh);
 
-        // Barra de vida 3D
-        this.hpBarGroup = new THREE.Group();
-        this.hpBarGroup.position.y = this.config.SIZE / 2 + 0.5;
-        
-        const bgGeo = new THREE.PlaneGeometry(2, 0.2);
-        const bgMat = new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide });
-        this.hpBg = new THREE.Mesh(bgGeo, bgMat);
-        
-        const fgGeo = new THREE.PlaneGeometry(2, 0.2);
-        const fgMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide });
-        this.hpFg = new THREE.Mesh(fgGeo, fgMat);
-        this.hpFg.position.z = 0.01; // Ligeramente adelante
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(0, 5, 20);
 
-        this.hpBarGroup.add(this.hpBg);
-        this.hpBarGroup.add(this.hpFg);
-        this.mesh.add(this.hpBarGroup);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(this.renderer.domElement);
 
-        this.scene.add(this.mesh);
+        // Luces
+        const ambient = new THREE.AmbientLight(0x404040, 1);
+        this.scene.add(ambient);
+
+        this.dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        this.dirLight.position.set(50, 100, 50);
+        this.dirLight.castShadow = true;
+        this.dirLight.shadow.camera.left = -50;
+        this.dirLight.shadow.camera.right = 50;
+        this.dirLight.shadow.camera.top = 50;
+        this.dirLight.shadow.camera.bottom = -50;
+        this.scene.add(this.dirLight);
     }
 
-    takeDamage(amount) {
-        this.hp -= amount;
-        
-        // Actualizar barra de vida
-        const percent = Math.max(0, this.hp / this.maxHp);
-        this.hpFg.scale.x = percent;
-        this.hpFg.position.x = -1 * (1 - percent); // Alinear a la izquierda
+    _initEvents() {
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
 
-        // Cambiar color a rojo/naranja si queda poca vida
-        if (percent <= 0.3) {
-            this.hpFg.material.color.setHex(0xff0000);
-        } else if (percent <= 0.6) {
-            this.hpFg.material.color.setHex(0xffff00);
-        }
+        window.addEventListener('keydown', (e) => this.input.keys[e.code] = true);
+        window.addEventListener('keyup', (e) => this.input.keys[e.code] = false);
 
-        // Efecto visual de daño (Flash)
-        this.mesh.children[0].material.emissive.setHex(0xffffff);
-        setTimeout(() => {
-            if(this.active) this.mesh.children[0].material.emissive.setHex(0x000000);
-        }, 100);
+        window.addEventListener('mousemove', (e) => {
+            // Normalizar coordenadas del mouse de -1 a 1
+            this.input.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            this.input.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
 
-        if (this.hp <= 0) {
-            this.destroy();
-        }
-    }
-
-    update(delta, playerPosition, gameObj) {
-        if (!this.active) return;
-
-        const distance = this.mesh.position.distanceTo(playerPosition);
-        const dirX = playerPosition.x - this.mesh.position.x;
-        const sign = Math.sign(dirX);
-
-        const isSmall = this.typeStr === 'SMALL';
-        const isFinalBoss = this.typeStr === 'FINAL_BOSS';
-        const isBoss = this.typeStr === 'BOSS';
-        const isLarge = this.typeStr === 'MEDIUM' || this.typeStr === 'LARGE';
-
-        if (isFinalBoss) {
-            this.state = 'ATTACK'; // Siempre ataca
-            
-            // Movimiento lateral continuo estilo Space Invaders
-            this.mesh.position.x += this.patrolDir * this.config.SPEED * 0.5 * delta;
-            
-            // Limitar movimiento y cambiar dirección al llegar al borde
-            if (this.mesh.position.x > this.startX + 15) {
-                this.patrolDir = -1;
-                this.mesh.position.x = this.startX + 15;
-            } else if (this.mesh.position.x < this.startX - 15) {
-                this.patrolDir = 1;
-                this.mesh.position.x = this.startX - 15;
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && this.isRunning) {
+                this.shoot();
             }
+        });
+
+        document.getElementById('btn-play').addEventListener('click', () => {
+            this.start();
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            this.resetLevel();
+            this.ui.hideGameOver();
+            this.isRunning = true;
+        });
+    }
+
+    start() {
+        this.ui.hideStartScreen();
+        this.gameState = 'NORMAL';
+        this.player = new Player(this.scene, this.ui);
+        this.level = new Level(this.scene, this);
+        
+        this.ui.updateLevel(this.level.currentLevel);
+        this.ui.updateParts(this.collectedParts);
+        
+        this.audio.play('bg');
+        this.isRunning = true;
+        this.clock.start();
+        this.loop();
+    }
+
+    resetLevel() {
+        // Limpiar balas y enemigos
+        this.playerBullets.forEach(b => b.destroy());
+        this.enemyBullets.forEach(b => b.destroy());
+        this.enemies.forEach(e => e.destroy());
+        this.playerBullets = [];
+        this.enemyBullets = [];
+        this.enemies = [];
+
+        this.gameState = 'NORMAL';
+        this.bossSpawned = false; // Resetear bandera al reiniciar
+
+        // Reset player
+        this.player.isShipMode = false;
+        this.player.mesh.position.set(0, 5, 0);
+        this.player.velocity.set(0,0,0);
+        this.player.hp = CONSTANTS.PLAYER.MAX_HP;
+        this.player.jetpackEnergy = CONSTANTS.PLAYER.JETPACK_MAX_TIME;
+        this.player.weaponEnergy = 100;
+        this.ui.updateHealth(this.player.hp, CONSTANTS.PLAYER.MAX_HP);
+        
+        // Regenerar el mismo nivel
+        this.level.generateLevel();
+    }
+
+    startFinalBoss() {
+        this.gameState = 'FINAL_BOSS';
+        this.ui.updateLevel("FINAL");
+        
+        // Limpiar balas y enemigos
+        this.playerBullets.forEach(b => b.destroy());
+        this.enemyBullets.forEach(b => b.destroy());
+        this.enemies.forEach(e => e.destroy());
+        this.playerBullets = [];
+        this.enemyBullets = [];
+        this.enemies = [];
+        this.level.cleanUp(); // Limpiar el nivel (plataformas, suelo, etc.)
+
+        // Reset player a modo nave
+        this.player.isShipMode = true;
+        this.player.mesh.position.set(0, 2, 0);
+        this.player.velocity.set(0,0,0);
+        this.player.hp = CONSTANTS.PLAYER.MAX_HP;
+        this.player.weaponEnergy = 100;
+        this.ui.updateHealth(this.player.hp, CONSTANTS.PLAYER.MAX_HP);
+
+        // Configurar cámara fija
+        this.camera.position.set(0, 10, 25);
+        this.camera.lookAt(0, 5, 0);
+        this.dirLight.position.set(0, 20, 10);
+
+        // Instanciar Jefe Final asegurando que sea única instancia (usando bandera bossSpawned)
+        if (!this.bossSpawned) {
+            this.bossSpawned = true;
+            const boss = new Enemy(this.scene, 'FINAL_BOSS', new THREE.Vector3(0, 18, 0));
+            this.enemies.push(boss);
+        }
+    }
+
+
+
+    shoot() {
+        if (this.gameState === 'FINAL_BOSS') {
+            let target;
+            const finalBoss = this.enemies.find(e => e.typeStr === 'FINAL_BOSS');
             
-            this.mesh.rotation.y = 0; // Mirar al frente
-            
-            // Disparo
-            this.shootTimer += delta * 1000;
-            if (this.shootTimer >= this.shootInterval * 0.5) {
-                this.shootTimer = 0;
-                this.shoot(playerPosition, gameObj);
-            }
-            
-            return; // Termina la actualización exclusiva para FINAL_BOSS
-        } else if (isSmall) {
-            // Pequeños: patrullan, alta distancia detección
-            if (distance <= 35) {
-                this.state = 'ATTACK';
+            if (finalBoss) {
+                target = finalBoss.mesh.position.clone(); // Auto-Aim al Jefe Final
             } else {
-                this.state = 'PATROL';
+                target = this.player.mesh.position.clone().add(new THREE.Vector3(0, 10, 0));
             }
-        } else {
-            // Grandes y Jefes de nivel: no patrullan, persiguen desde cualquier distancia
-            this.state = 'ATTACK';
+            
+            const bullet = this.player.shoot(target);
+            if (bullet) {
+                this.playerBullets.push(bullet);
+                this.audio.play('shoot');
+            }
+            return;
         }
 
-        if (this.state === 'PATROL') {
-            // Movimiento izquierda/derecha automático suave
-            this.mesh.position.x += this.patrolDir * this.config.SPEED * 0.5 * delta;
-            
-            // Cambiar dirección si se sale del rango de patrulla
-            if (Math.abs(this.mesh.position.x - this.startX) > this.patrolRange) {
-                this.patrolDir *= -1;
-                // Ajustar posición para evitar oscilación
-                this.mesh.position.x = this.startX + this.patrolDir * this.patrolRange * 0.99;
+        // Proyectar mouse al plano Z=0
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(this.input.mouse, this.camera);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const target = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, target);
+
+        if (target) {
+            const bullet = this.player.shoot(target);
+            if (bullet) {
+                this.playerBullets.push(bullet);
+                this.audio.play('shoot');
             }
+        }
+    }
+
+    checkCollisions() {
+        // Bala Jugador vs Enemigos
+        for (let i = this.playerBullets.length - 1; i >= 0; i--) {
+            const b = this.playerBullets[i];
+            if (!b.active) continue;
             
-            this.mesh.rotation.y = this.patrolDir > 0 ? Math.PI / 2 : -Math.PI / 2;
-        } else if (this.state === 'ATTACK') {
-            // Dejar de patrullar y mirar al jugador
-            this.mesh.rotation.y = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
-            
-            // Grandes y Jefes de nivel persiguen al jugador
-            if (isLarge || isBoss) {
-                const aggressiveness = isBoss ? 1.5 : 1.0;
-                // Mantener cierta distancia para disparar sin superponerse
-                if (Math.abs(dirX) > 5) {
-                    this.mesh.position.x += sign * this.config.SPEED * aggressiveness * delta;
-                }
-            }
-            
-            // Disparo en ráfagas o individual
-            if (isFinalBoss) {
-                // Jefe final dispara normal
-                this.shootTimer += delta * 1000;
-                if (this.shootTimer >= this.shootInterval * 0.5) {
-                    this.shootTimer = 0;
-                    this.shoot(playerPosition, gameObj);
-                }
-            } else {
-                const maxShots = Math.min(5, gameObj.level.currentLevel); // +1 disparo por nivel (máx 5)
-                const currentShootInterval = isBoss ? this.shootInterval * 0.6 : this.shootInterval;
-                
-                if (this.isBursting) {
-                    this.burstTimer += delta * 1000;
-                    if (this.burstTimer >= this.burstDelay) {
-                        this.burstTimer = 0;
-                        this.shoot(playerPosition, gameObj);
-                        this.burstShotsFired++;
-                        
-                        if (this.burstShotsFired >= maxShots) {
-                            this.isBursting = false;
-                            this.shootTimer = 0; // Inicia cooldown entre ráfagas
+            for (let j = this.enemies.length - 1; j >= 0; j--) {
+                const e = this.enemies[j];
+                if (!e.active) continue;
+
+                // Colisión simple por distancia
+                if (b.mesh.position.distanceTo(e.mesh.position) < e.config.SIZE) {
+                    b.destroy();
+                    e.takeDamage(CONSTANTS.BULLET.DAMAGE); // 1 hit
+                    
+                    if (e.hp <= 0) {
+                        this.audio.play('explosion');
+                        if (e.typeStr === 'BOSS') {
+                            this.level.spawnShipPart(e.mesh.position);
+                        } else if (e.typeStr === 'FINAL_BOSS') {
+                            this.isRunning = false;
+                            this.ui.showVictory();
                         }
                     }
-                } else {
-                    this.shootTimer += delta * 1000;
-                    if (this.shootTimer >= currentShootInterval) {
-                        this.isBursting = true;
-                        this.burstTimer = this.burstDelay; // Forzar disparo inmediato
-                        this.burstShotsFired = 0;
-                    }
+                    break; // La bala ya colisionó
                 }
             }
         }
-    }
 
-    shoot(targetPos, gameObj) {
-        const origin = this.mesh.position.clone().add(new THREE.Vector3(0, 0, 0));
-        
-        // Añadir ligera imprecisión
-        const error = new THREE.Vector3(
-            (Math.random() - 0.5) * 2,
-            (Math.random() - 0.5) * 2,
-            0
-        );
-        const direction = targetPos.clone().add(error).sub(origin).normalize();
+        // Bala Enemigo vs Jugador
+        for (let i = this.enemyBullets.length - 1; i >= 0; i--) {
+            const b = this.enemyBullets[i];
+            if (!b.active) continue;
 
-        const bullet = new Bullet(this.scene, origin, direction, false);
-        gameObj.enemyBullets.push(bullet);
-        gameObj.audio.play('shoot');
-    }
+            // El jugador es más alto, usamos hitbox aproximada
+            const dist = b.mesh.position.distanceTo(this.player.mesh.position);
+            if (dist < 1.2) {
+                b.destroy();
+                // ¿Cuánto daño? Podríamos guardar el tipo de enemigo en la bala, pero
+                // como simplificación asignaremos un daño fijo o buscar quién disparó.
+                // Como las balas no guardan su originador, daremos un daño estándar
+                // o iteramos balas con daño adjunto. Añadamos daño fijo medio (15) si no hay origen.
+                this.player.takeDamage(15);
+            }
+        }
 
-    destroy() {
-        if (!this.active) return;
-        this.active = false;
-        
-        // Limpiar recursos
-        this.mesh.children.forEach(child => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) child.material.dispose();
+        // Enemigo toca al jugador
+        this.enemies.forEach(e => {
+            if (e.active && e.mesh.position.distanceTo(this.player.mesh.position) < e.config.SIZE + 0.5) {
+                // Empujar al jugador un poco para evitar daño continuo instantáneo
+                this.player.takeDamage(e.config.DAMAGE);
+                this.player.velocity.y = 10;
+                this.player.velocity.x = (this.player.mesh.position.x - e.mesh.position.x) * 5;
+            }
         });
-        
-        this.scene.remove(this.mesh);
+
+        // Plataformas vs Jugador
+        this.player.isGrounded = false;
+        if (this.player.velocity.y <= 0) {
+            this.level.platforms.forEach(p => {
+                // Chequear si cae sobre la plataforma
+                if (Math.abs(this.player.mesh.position.x - p.mesh.position.x) < p.mesh.geometry.parameters.width / 2 + 0.4) {
+                    if (this.player.mesh.position.y - 0.6 >= p.mesh.position.y && 
+                        this.player.mesh.position.y - 0.6 + this.player.velocity.y * 0.016 <= p.mesh.position.y + 0.5) {
+                        this.player.mesh.position.y = p.mesh.position.y + 0.5 + 0.6;
+                        this.player.velocity.y = p.speed * p.dir; // Mover con la plataforma
+                        this.player.isGrounded = true;
+                    }
+                }
+            });
+        }
+
+        // Recoger parte de nave
+        if (this.level.shipPart && this.player.mesh.position.distanceTo(this.level.shipPart.position) < 2) {
+            this.collectedParts++;
+            this.ui.updateParts(this.collectedParts);
+            
+            if (this.level.nextLevel()) {
+                // Reset pos jugador
+                this.player.mesh.position.set(0, 5, 0);
+                this.player.velocity.set(0,0,0);
+                this.ui.updateLevel(this.level.currentLevel);
+                // Limpiar enemigos residuales
+                this.enemies.forEach(e => e.destroy());
+                this.enemies = [];
+            } else {
+                // Iniciar jefe final en lugar de victoria
+                this.startFinalBoss();
+            }
+        }
+
+        // Lógica de muerte
+        if (this.player.hp <= 0) {
+            this.isRunning = false;
+            this.ui.showGameOver();
+        }
+    }
+
+    loop() {
+        if (!this.isRunning) return;
+        requestAnimationFrame(() => this.loop());
+
+        const delta = Math.min(this.clock.getDelta(), 0.1); // Cap delta a 0.1s para evitar fallos si la tab se oculta
+
+        this.player.update(delta, this.input);
+        this.level.update(delta, this.player.mesh.position);
+
+        // Actualizar entidades
+        this.enemies = this.enemies.filter(e => e.active);
+        this.enemies.forEach(e => e.update(delta, this.player.mesh.position, this));
+
+        this.playerBullets = this.playerBullets.filter(b => b.active);
+        this.playerBullets.forEach(b => b.update(delta));
+
+        this.enemyBullets = this.enemyBullets.filter(b => b.active);
+        this.enemyBullets.forEach(b => b.update(delta));
+
+        this.checkCollisions();
+
+        if (this.gameState !== 'FINAL_BOSS') {
+            // Cámara sigue al jugador
+            this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, this.player.mesh.position.x + 5, delta * 5);
+            this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, Math.max(5, this.player.mesh.position.y + 2), delta * 5);
+            this.camera.lookAt(this.camera.position.x, this.camera.position.y - 2, 0);
+
+            // Luz sigue al jugador para sombras dinámicas locales
+            this.dirLight.position.x = this.player.mesh.position.x + 10;
+        }
+
+        if (this.gameState !== 'FINAL_BOSS') {
+            // Limitar jugador al nivel por la izquierda
+            if (this.player.mesh.position.x < -10) this.player.mesh.position.x = -10;
+        }
+
+        // Render
+        this.renderer.render(this.scene, this.camera);
     }
 }
