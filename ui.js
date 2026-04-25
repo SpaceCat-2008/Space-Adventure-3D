@@ -3,6 +3,7 @@ export class UI {
     constructor() {
         this.hpBarInner = document.getElementById('hp-bar-inner');
         this.jetpackBarInner = document.getElementById('jetpack-bar-inner');
+        this.weaponBarInner = document.getElementById('weapon-bar-inner');
         this.levelText = document.getElementById('level-text');
         this.partsText = document.getElementById('parts-text');
         this.startScreen = document.getElementById('start-screen');
@@ -35,6 +36,12 @@ export class UI {
 
     updateJetpack(percent) {
         this.jetpackBarInner.style.width = (percent * 100) + '%';
+    }
+
+    updateWeapon(percent) {
+        if (this.weaponBarInner) {
+            this.weaponBarInner.style.width = (percent * 100) + '%';
+        }
     }
 
     updateLevel(level) {
