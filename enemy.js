@@ -1,4 +1,3 @@
-import * as THREE from './three.module.js';
 import { CONSTANTS } from './utils.js';
 import { Bullet } from './bullet.js';
 
@@ -11,7 +10,12 @@ export class Enemy {
         this.maxHp = this.config.HP;
         this.active = true;
         this.shootTimer = 0;
-        this.shootInterval = Math.random() * 1000 + 1500; // 1.5 a 2.5 seg
+        this.shootInterval = Math.random() * 1000 + 2000; // 2 a 3 seg cooldown entre ráfagas
+        
+        this.isBursting = false;
+        this.burstTimer = 0;
+        this.burstDelay = 150; // ms entre balas de la ráfaga
+        this.burstShotsFired = 0;
 
         this.state = 'PATROL';
         this.startX = position.x;
@@ -25,30 +29,57 @@ export class Enemy {
         this.mesh = new THREE.Group();
         this.mesh.position.copy(position);
 
-        // Cuerpo principal (ej. una esfera simulando la cabeza del gato alienígena)
-        const bodyGeo = new THREE.SphereGeometry(this.config.SIZE / 2, 16, 16);
-        const bodyMat = new THREE.MeshStandardMaterial({ 
-            color: this.config.COLOR,
-            roughness: 0.7,
-            metalness: 0.2
-        });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.castShadow = true;
-        body.receiveShadow = true;
-        this.mesh.add(body);
+        const isFinalBoss = this.typeStr === 'FINAL_BOSS';
 
-        // Orejas
-        const earGeo = new THREE.ConeGeometry(this.config.SIZE / 5, this.config.SIZE / 2, 8);
-        const earL = new THREE.Mesh(earGeo, bodyMat);
-        earL.position.set(-this.config.SIZE / 4, this.config.SIZE / 2.5, 0);
-        earL.rotation.z = Math.PI / 6;
-        
-        const earR = new THREE.Mesh(earGeo, bodyMat);
-        earR.position.set(this.config.SIZE / 4, this.config.SIZE / 2.5, 0);
-        earR.rotation.z = -Math.PI / 6;
+        if (isFinalBoss) {
+            const bodyGeo = new THREE.SphereGeometry(this.config.SIZE / 2, 16, 16);
+            const bodyMat = new THREE.MeshStandardMaterial({ 
+                color: this.config.COLOR,
+                roughness: 0.7,
+                metalness: 0.2
+            });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.castShadow = true;
+            body.receiveShadow = true;
+            this.mesh.add(body);
+        } else {
+            // Low poly green space cats
+            const isBoss = this.typeStr === 'BOSS';
+            const catColor = isBoss ? 0x11aa22 : 0x22cc44; // Jefe un verde más distintivo
+            
+            const catMat = new THREE.MeshStandardMaterial({ 
+                color: catColor,
+                roughness: 0.8,
+                metalness: 0.1,
+                flatShading: true
+            });
 
-        this.mesh.add(earL);
-        this.mesh.add(earR);
+            // Cabeza (Box)
+            const headGeo = new THREE.BoxGeometry(this.config.SIZE, this.config.SIZE * 0.8, this.config.SIZE);
+            const head = new THREE.Mesh(headGeo, catMat);
+            head.castShadow = true;
+            head.receiveShadow = true;
+
+            // Orejas (Cone)
+            const earGeo = new THREE.ConeGeometry(this.config.SIZE * 0.25, this.config.SIZE * 0.5, 4);
+            const earL = new THREE.Mesh(earGeo, catMat);
+            earL.position.set(-this.config.SIZE * 0.3, this.config.SIZE * 0.4, 0);
+            
+            const earR = new THREE.Mesh(earGeo, catMat);
+            earR.position.set(this.config.SIZE * 0.3, this.config.SIZE * 0.4, 0);
+
+            // Ojos (Box oscuros)
+            const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+            const eyeGeo = new THREE.BoxGeometry(this.config.SIZE * 0.15, this.config.SIZE * 0.15, this.config.SIZE * 0.1);
+            
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-this.config.SIZE * 0.2, this.config.SIZE * 0.1, this.config.SIZE * 0.45);
+            
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeR.position.set(this.config.SIZE * 0.2, this.config.SIZE * 0.1, this.config.SIZE * 0.45);
+
+            this.mesh.add(head, earL, earR, eyeL, eyeR);
+        }
 
         // Barra de vida 3D
         this.hpBarGroup = new THREE.Group();
@@ -103,11 +134,46 @@ export class Enemy {
         const dirX = playerPosition.x - this.mesh.position.x;
         const sign = Math.sign(dirX);
 
-        // Detectar jugador a menos de 15 de distancia
-        if (distance <= 15) {
-            this.state = 'ATTACK';
+        const isSmall = this.typeStr === 'SMALL';
+        const isFinalBoss = this.typeStr === 'FINAL_BOSS';
+        const isBoss = this.typeStr === 'BOSS';
+        const isLarge = this.typeStr === 'MEDIUM' || this.typeStr === 'LARGE';
+
+        if (isFinalBoss) {
+            this.state = 'ATTACK'; // Siempre ataca
+            
+            // Movimiento lateral continuo estilo Space Invaders
+            this.mesh.position.x += this.patrolDir * this.config.SPEED * 0.5 * delta;
+            
+            // Limitar movimiento y cambiar dirección al llegar al borde
+            if (this.mesh.position.x > this.startX + 15) {
+                this.patrolDir = -1;
+                this.mesh.position.x = this.startX + 15;
+            } else if (this.mesh.position.x < this.startX - 15) {
+                this.patrolDir = 1;
+                this.mesh.position.x = this.startX - 15;
+            }
+            
+            this.mesh.rotation.y = 0; // Mirar al frente
+            
+            // Disparo
+            this.shootTimer += delta * 1000;
+            if (this.shootTimer >= this.shootInterval * 0.5) {
+                this.shootTimer = 0;
+                this.shoot(playerPosition, gameObj);
+            }
+            
+            return; // Termina la actualización exclusiva para FINAL_BOSS
+        } else if (isSmall) {
+            // Pequeños: patrullan, alta distancia detección
+            if (distance <= 35) {
+                this.state = 'ATTACK';
+            } else {
+                this.state = 'PATROL';
+            }
         } else {
-            this.state = 'PATROL';
+            // Grandes y Jefes de nivel: no patrullan, persiguen desde cualquier distancia
+            this.state = 'ATTACK';
         }
 
         if (this.state === 'PATROL') {
@@ -126,11 +192,47 @@ export class Enemy {
             // Dejar de patrullar y mirar al jugador
             this.mesh.rotation.y = sign > 0 ? Math.PI / 2 : -Math.PI / 2;
             
-            // Disparar con cooldown (no spam)
-            this.shootTimer += delta * 1000;
-            if (this.shootTimer >= this.shootInterval) {
-                this.shootTimer = 0;
-                this.shoot(playerPosition, gameObj);
+            // Grandes y Jefes de nivel persiguen al jugador
+            if (isLarge || isBoss) {
+                const aggressiveness = isBoss ? 1.5 : 1.0;
+                // Mantener cierta distancia para disparar sin superponerse
+                if (Math.abs(dirX) > 5) {
+                    this.mesh.position.x += sign * this.config.SPEED * aggressiveness * delta;
+                }
+            }
+            
+            // Disparo en ráfagas o individual
+            if (isFinalBoss) {
+                // Jefe final dispara normal
+                this.shootTimer += delta * 1000;
+                if (this.shootTimer >= this.shootInterval * 0.5) {
+                    this.shootTimer = 0;
+                    this.shoot(playerPosition, gameObj);
+                }
+            } else {
+                const maxShots = Math.min(5, gameObj.level.currentLevel); // +1 disparo por nivel (máx 5)
+                const currentShootInterval = isBoss ? this.shootInterval * 0.6 : this.shootInterval;
+                
+                if (this.isBursting) {
+                    this.burstTimer += delta * 1000;
+                    if (this.burstTimer >= this.burstDelay) {
+                        this.burstTimer = 0;
+                        this.shoot(playerPosition, gameObj);
+                        this.burstShotsFired++;
+                        
+                        if (this.burstShotsFired >= maxShots) {
+                            this.isBursting = false;
+                            this.shootTimer = 0; // Inicia cooldown entre ráfagas
+                        }
+                    }
+                } else {
+                    this.shootTimer += delta * 1000;
+                    if (this.shootTimer >= currentShootInterval) {
+                        this.isBursting = true;
+                        this.burstTimer = this.burstDelay; // Forzar disparo inmediato
+                        this.burstShotsFired = 0;
+                    }
+                }
             }
         }
     }
